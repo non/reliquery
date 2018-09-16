@@ -13,37 +13,25 @@ from signal import pause
 from socket import socket, AF_INET, SOCK_DGRAM
 from subprocess import call
 
+import network
+
 base = dirname(realpath(__file__))
 
-def get_ip():
-    try:
-        s = socket(AF_INET, SOCK_DGRAM)
-        s.connect(('8.8.8.8', 0))
-        return s.getsockname()[0]
-    except:
-        return 'unknown'
-
-def loadtiles(path, size):
-    img = Image.open(path)
-    x0, y0, x1, y1 = img.getbbox()
-    dx = x1 - x0
-    dy = y1 - y0
-    assert dx % size == 0, dy % size == 0
-    tiles = []
-    for y in range(y0, y1, size):
-        for x in range(x0, x1, size):
-            tile = img.crop((x, y, x + size, y + size)).convert('1')
-            tiles.append(tile)
-    return img, tiles
+# def get_ip():
+#     try:
+#         s = socket(AF_INET, SOCK_DGRAM)
+#         s.connect(('8.8.8.8', 0))
+#         return s.getsockname()[0]
+#     except:
+#         return 'unknown'
 
 class Reliquery(object):
 
     generators = [Magic8, Tarot, Potion, Labyrinth, Tiles, Npc, Cave, Diagnostic]
 
-    sheet, tiles = loadtiles(base + '/16tiles.bmp', 16)
-
     def __init__(self):
-        self.ip = get_ip()
+        #self.ip = get_ip()
+        self.ip = network.ip()
         self.done = False
         self.printer = Adafruit_Thermal("/dev/serial0", 19200, timeout=5)
         self.switch = Button(7)
@@ -72,13 +60,13 @@ class Reliquery(object):
             else:
                 g.generate(self)
         self.feed(3)
-    
+
     def read_mode(self):
         for i, b in enumerate(self.wheelbuttons):
             if b.is_pressed:
                 return i + 1
         return 0
-    
+
     def shutdown(self):
         self.done = True
         self.led.on()
@@ -88,7 +76,7 @@ class Reliquery(object):
         call("sync")
         call(["shutdown", "-h", "now"])
         self.led.off()
-    
+
     def tap(self):
         if not self.done:
             self.led.on()

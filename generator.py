@@ -1,16 +1,10 @@
-#!/usr/bin/python
-#
-# notes:
-#  - 32 columns of text at normal font
-
-from Adafruit_Thermal import *
+import network
 from PIL import Image
-from gpiozero import LED, Button
-from signal import pause
-from socket import socket, AF_INET, SOCK_DGRAM
 from subprocess import call
 from random import choice, random, randint, shuffle
 import re
+import sys
+import tiles
 
 vowels = set('aeiouy')
 
@@ -21,14 +15,14 @@ def a_an(noun):
         return 'a'
 
 class Generator(object):
+    name = None
     @classmethod
     def generate(cls, p):
         p.println('unimplemented %r' % cls)
 
 class Diagnostic(Generator):
-
+    name = 'diagnostic'
     cls_re = re.compile(r"^<class '.+\.([^.]+)'>$")
-
     @classmethod
     def generate(cls, r):
         r.println('reliquery diagnostic')
@@ -42,6 +36,7 @@ class Diagnostic(Generator):
             r.println("%d: %s" % (i + 1, s))
 
 class Magic8(Generator):
+    name = 'magic8'
     responses = [
         "it is certain",
         "it is decidedly so",
@@ -71,6 +66,7 @@ class Magic8(Generator):
         p.println('  "%s"' % choice(cls.responses))
 
 class Tarot(Generator):
+    name = 'tarot'
     majors = [
         "the fool",
         "the magician",
@@ -132,6 +128,7 @@ class Tarot(Generator):
 
 
 class Potion(Generator):
+    name = 'potion'
     tints = {
         'metallic': ['brassy', 'bronze', 'coppery', 'gold', 'silvery', 'steely'],
         'white': ['bone', 'colorless', 'ivory', 'pearl'],
@@ -182,6 +179,7 @@ class Map(object):
         return canvas
 
 class Labyrinth(Generator):
+    name = 'labyrinth'
     glyphs = {
         '#': 0,
         '.': 13,
@@ -268,12 +266,13 @@ class Labyrinth(Generator):
         h = (384 / scale) - 1
         f = choice([cls.kruskal, cls.backtrack, cls.backtrackx, cls.backtracky])
         maze = f(w, h)
-        canvas = maze.render(scale, cls.glyphs, p.tiles)
+        _, ptiles = tiles.load('16tiles.bmp', 16)
+        canvas = maze.render(scale, cls.glyphs, ptiles)
         p.println('enter the labyrinth!')
         p.printImage(canvas, True)
 
 class Tiles(Generator):
-
+    name = 'tiles'
     @classmethod
     def generate(cls, p):
         scale = 8 if p.switch.is_pressed else 16
@@ -288,6 +287,7 @@ class Tiles(Generator):
 import names
 
 class Npc(Generator):
+    name = 'npc'
 
     alignments = [
         'Lawful-Good', 'Neutral-Good', 'Chaotic-Good',
@@ -369,6 +369,7 @@ class Npc(Generator):
 
 
 class Cave(Generator):
+    name = 'cave'
     glyphs = {
         '#': 0,
         '.': 13,
@@ -428,6 +429,49 @@ class Cave(Generator):
         w = (384 / scale)
         h = (384 / scale)
         cave = cls.init(w, h)
-        canvas = cave.render(scale, cls.glyphs, p.tiles)
+        _, ptiles = tiles.load('16tiles.bmp', 16)
+        canvas = cave.render(scale, cls.glyphs, ptiles)
         p.println('enter the cavern!')
         p.printImage(canvas, True)
+
+allgenerators = [Diagnostic, Magic8, Tarot, Potion, Labyrinth, Tiles, Npc, Cave]
+
+class Switch(object):
+    def __init__(self, b):
+        self.is_pressed = b
+class Sim(object):
+    def __init__(self):
+        self.switch = Switch(True)
+        self.ip = network.ip()
+        self.generators = list(allgenerators)
+        self.i = 1
+    def println(self, msg):
+        print msg
+    def printImage(self, img, LaaT):
+        path = 'image%d.bmp' % self.i
+        img.save(path)
+        print '%s: wrote %r' % (path, img)
+        self.i += 1
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    sim = Sim()
+    if not args:
+        Diagnostic.generate(sim)
+    else:
+        s = args[0]
+        for g in allgenerators:
+            if g.name == s:
+                g.generate(sim)
+                break
+        else:
+            print 'no generator for %r' % s
+
+    # Magic8.generate(sim)
+    # Tarot.generate(sim)
+    # Potion.generate(sim)
+    # Labyrinth.generate(sim)
+    # Tiles.generate(sim)
+    #Npc.generate(sim)
+    # Cave.generate(sim)
+    # Diagnostic.generate(sim)
