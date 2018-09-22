@@ -17,20 +17,11 @@ import network
 
 base = dirname(realpath(__file__))
 
-# def get_ip():
-#     try:
-#         s = socket(AF_INET, SOCK_DGRAM)
-#         s.connect(('8.8.8.8', 0))
-#         return s.getsockname()[0]
-#     except:
-#         return 'unknown'
-
 class Reliquery(object):
 
     generators = [Magic8, Tarot, Potion, Labyrinth, Tiles, Npc, Cave, Diagnostic]
 
     def __init__(self):
-        #self.ip = get_ip()
         self.ip = network.ip()
         self.done = False
         self.printer = Adafruit_Thermal("/dev/serial0", 19200, timeout=5)
@@ -75,13 +66,12 @@ class Reliquery(object):
         self.feed(3)
         call("sync")
         call(["shutdown", "-h", "now"])
-        self.led.off()
 
     def tap(self):
         if not self.done:
             self.led.on()
             self.generate()
-            self.led.off()
+            self.led.blink(on_time=0.2, off_time=2.0)
 
     def print_banner(self):
         self.println('reliquery (ip: %s)' % self.ip)
@@ -94,7 +84,6 @@ class Reliquery(object):
     def main(self):
         self.led.on()
         self.print_banner()
-        self.led.off()
         self.button.when_released = self.tap
         self.button.when_held = self.shutdown
         self.led.blink(on_time=0.2, off_time=2.0)
