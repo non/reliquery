@@ -1,10 +1,13 @@
 import network
+from itertools import permutations
 from PIL import Image
 from subprocess import call
 from random import choice, random, randint, shuffle
 import re
 import sys
 import tiles
+
+from cave import Map
 
 vowels = set('aeiouy')
 
@@ -157,27 +160,6 @@ class Potion(Generator):
         p.println('  it has %s %s tint' % (a_an(tint), tint))
         p.println('  and %s %s flavor' % (a_an(taste), taste))
 
-class Map(object):
-    def __init__(self, width, height, fill='#'):
-        self.width = width
-        self.height = height
-        self.grid = [[fill for i in range(width)] for j in range(height)]
-
-    def get(self, x, y):
-        return self.grid[y][x]
-
-    def set(self, x, y, glyph):
-        self.grid[y][x] = glyph
-
-    def render(self, scale, glyphs, tiles0):
-        tiles = [t.resize((scale, scale)) for t in tiles0]
-        canvas = Image.new('1', (self.width * scale, self.height * scale))
-        for row in range(0, self.height):
-            for col in range(0, self.width):
-                tile = tiles[glyphs[self.grid[row][col]]]
-                canvas.paste(tile, (col * scale, row * scale))
-        return canvas
-
 class Labyrinth(Generator):
     name = 'labyrinth'
     glyphs = {
@@ -186,86 +168,17 @@ class Labyrinth(Generator):
     }
 
     @classmethod
-    def init(cls, w, h):
-        maze = Map(w, h, '#')
-        for x in range(1, w - 1, 2):
-            for y in range(1, h - 1, 2):
-                maze.set(x, y, '.')
-        return maze
-
-    @classmethod
-    def backtrackx(cls, w, h):
-        return cls.backtrack(w, h, ds=[(2, 0), (2, 0), (0, 2), (-2, 0), (-2, 0), (0, -2)])
-
-    @classmethod
-    def backtracky(cls, w, h):
-        return cls.backtrack(w, h, ds=[(2, 0), (0, 2), (0, 2), (-2, 0), (0, -2), (0, -2)])
-
-    @classmethod
-    def backtrack(cls, w, h, ds=[(2, 0), (0, 2), (-2, 0), (0, -2)]):
-        maze = cls.init(w, h)
-        ds = list(ds)
-        seen = set()
-        def in_bounds(x, y):
-            return 0 < x and x < (w - 1) and 0 < y and y < (h - 1)
-        def recur(x0, y0):
-            if (x0, y0) in seen:
-                return
-            seen.add((x0, y0))
-            shuffle(ds)
-            for dx, dy in ds:
-                x1, y1 = x0 + dx, y0 + dy
-                if in_bounds(x1, y1) and (x1, y1) not in seen:
-                    maze.set(x0 + (dx / 2), y0 + (dy / 2), '.')
-                    recur(x1, y1)
-        recur(1, 1)
-        maze.set(1, 0, '.')
-        maze.set(-2, -1, '.')
-        return maze
-
-    @classmethod
-    def kruskal(cls, w, h):
-        maze = Map(w, h, '#')
-        walls = []
-        for x in range(2, w - 1, 2):
-            for y in range(1, h - 1, 2):
-                walls.append((x, y))
-        for x in range(1, w - 1, 2):
-            for y in range(2, h - 1, 2):
-                walls.append((x, y))
-        cells = {}
-        colors = 0
-        for x in range(1, w - 1, 2):
-            for y in range(1, h - 1, 2):
-                cells[(x, y)] = colors
-                maze.set(x, y, '.')
-                colors += 1
-        shuffle(walls)
-        for (wx, wy) in walls:
-            if (wx % 2) == 0:
-                sx0, sx1 = wx - 1, wx + 1
-                sy0, sy1 = wy, wy
-            else:
-                sx0, sx1 = wx, wx
-                sy0, sy1 = wy - 1, wy + 1
-            c0 = cells[(sx0, sy0)]
-            c1 = cells[(sx1, sy1)]
-            if c0 != c1:
-                maze.set(wx, wy, '.')
-                for k in cells:
-                    if cells[k] == c1:
-                        cells[k] = c0
-        maze.set(1, 0, '.')
-        maze.set(-2, -1, '.')
-        return maze
-
-    @classmethod
     def generate(cls, p):
         scale = 8 if p.switch.is_pressed else 16
         w = (384 / scale) - 1
         h = (384 / scale) - 1
-        f = choice([cls.kruskal, cls.backtrack, cls.backtrackx, cls.backtracky])
-        maze = f(w, h)
+        fs = [
+            lambda w, h: Map.maze_backtrack(w, h, ds=[(2, 0), (2, 0), (0, 2), (-2, 0), (-2, 0), (0, -2)]),
+            lambda w, h: Map.maze_backtrack(w, h, ds=[(2, 0), (0, 2), (0, 2), (-2, 0), (0, -2), (0, -2)]),
+            lambda w, h: Map.maze_backtrack(w, h, ds),
+            lambda w, h: Map.maze_kruskal(w, h),
+        ]
+        maze = choice(fs)(w, h)
         _, ptiles = tiles.load('16tiles.bmp', 16)
         canvas = maze.render(scale, cls.glyphs, ptiles)
         p.println('enter the labyrinth!')
@@ -367,13 +280,20 @@ class Npc(Generator):
         for t in traits:
             p.println(' - %s' % t)
 
-
 class Cave(Generator):
     name = 'cave'
     glyphs = {
         '#': 0,
         '.': 13,
     }
+
+    cardinal = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+    allcardinals = list(permutations(cardinal))
+
+    @classmethod
+    def randomcardinal(cls):
+        return choice(cls.allcardinals)
 
     adjacent = [
         (-1, -1), (-1, +0), (-1, +1),
@@ -385,13 +305,16 @@ class Cave(Generator):
     def init(cls, w, h):
         attempts = 10
         for i in range(0, attempts):
-            cave = Map(w, h, '#')
+            cave = Map(w, h)
             for x in range(1, w - 1):
                 for y in range(1, h - 1):
                     if random() < 0.5:
                         cave.set(x, y, '.')
             for i in range(0, 10):
                 cls.automaton(cave)
+            cls.joinall(cave)
+            cls.automaton(cave)
+            cls.automaton(cave)
             if cls.isok(cave):
                 break
         return cave
@@ -403,7 +326,7 @@ class Cave(Generator):
         for y in range(1, cave.height - 1):
             for x in range(1, cave.width - 1):
                 total += 1.0
-                if cave.get(x, y) == '.':
+                if cave.isopen(x, y):
                     space += 1.0
         ratio = space / total
         return 0.2 < ratio and ratio < 0.6
@@ -414,14 +337,81 @@ class Cave(Generator):
             for x in range(1, cave.width - 1):
                 wallcount = 0
                 for dy, dx in cls.adjacent:
-                    if cave.get(x + dx, y + dy) == '#':
+                    if cave.iswall(x + dx, y + dy):
                         wallcount += 1
-                if cave.get(x, y) == '#':
+                if cave.iswall(x, y):
                     if wallcount < 4:
                         cave.set(x, y, '.')
                 else:
                     if wallcount >= 5:
                         cave.set(x, y, '#')
+
+    @classmethod
+    def joinall(cls, cave):
+        color = 1
+        colorof = {}
+        groups = {}
+
+        def dig(x, y, color):
+            cave.set(x, y, '.')
+            colorof[(x, y)] = color
+
+        def join(color):
+            color = groups.keys()[0]
+            queue = list(groups[color])
+            previous = {}
+            for xy in queue:
+                previous [xy] = xy
+            while queue:
+                x, y = pt = queue.pop(0)
+                if cave.isopen(x, y) and colorof[pt] != color:
+                    color2 = colorof[pt]
+                    assert color2 in groups
+                    while pt != previous.get(pt):
+                        dig(pt[0], pt[1], color)
+                        dig(pt[0] + 1, pt[1], color)
+                        dig(pt[0], pt[1] + 1, color)
+                        dig(pt[0] + 1, pt[1] + 1, color)
+                        pt = previous.get(pt)
+                    combine(color, color2)
+                    return
+                for dy, dx in cls.randomcardinal():
+                    xx, yy = ptt = x + dx, y + dy
+                    if ptt not in previous and cave.isvalid(xx, yy):
+                        previous[ptt] = pt
+                        queue.append(ptt)
+
+        def combine(color1, color2):
+            for pt in colorof:
+                if colorof[pt] == color2:
+                    colorof[pt] = color1
+            g1 = groups[color1]
+            g2 = groups[color2]
+            g1.extend(g2)
+            del groups[color2]
+
+        def colorize(x0, y0, color):
+            seen = set((x0, y0))
+            queue = [(x0, y0)]
+            while queue:
+                (x, y) = pt = queue.pop()
+                colorof[pt] = color
+                groups[color].append(pt)
+                for dy, dx in cls.randomcardinal():
+                    xx, yy = ptt = x + dx, y + dy
+                    if ptt not in seen and cave.isopen(xx, yy):
+                        seen.add(ptt)
+                        queue.append(ptt)
+
+        for y in range(1, cave.height - 1):
+            for x in range(1, cave.width - 1):
+                if (x, y) not in colorof and cave.isopen(x, y):
+                    groups[color] = []
+                    colorize(x, y, color)
+                    color += 1
+
+        while len(groups) > 1:
+            join(1)
 
     @classmethod
     def generate(cls, p):
@@ -446,11 +436,16 @@ class Sim(object):
         self.generators = list(allgenerators)
         self.i = 1
     def println(self, msg):
-        print msg
+        n = len(msg)
+        if n < 32:
+            pad = (32 - n) * ' '
+            print '|' + msg + pad + '|'
+        else:
+            print '|' + msg[:32] + '|' + msg[32:]
     def printImage(self, img, LaaT):
         path = 'image%d.bmp' % self.i
         img.save(path)
-        print '%s: wrote %r' % (path, img)
+        print '-- saved: %s' % path
         self.i += 1
 
 if __name__ == "__main__":
@@ -466,12 +461,3 @@ if __name__ == "__main__":
                 break
         else:
             print 'no generator for %r' % s
-
-    # Magic8.generate(sim)
-    # Tarot.generate(sim)
-    # Potion.generate(sim)
-    # Labyrinth.generate(sim)
-    # Tiles.generate(sim)
-    #Npc.generate(sim)
-    # Cave.generate(sim)
-    # Diagnostic.generate(sim)
